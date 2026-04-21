@@ -1,0 +1,18 @@
+{
+  "channels": [
+    {
+      "id": "C0123456789",
+      "name": "example-channel-one",
+      "category": "support",
+      "priority": 1,
+      "description": "Primary support channel. Used by the standalone extract_slack.py CLI; the web app does not read this file."
+    },
+    {
+      "id": "C9876543210",
+      "name": "example-channel-two",
+      "category": "engineering",
+      "priority": 2,
+      "description": "Secondary channel example."
+    }
+  ]
+}

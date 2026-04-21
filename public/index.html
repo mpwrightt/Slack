@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slack Archive Curator</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/vendor/jszip.min.js"></script>
+</head>
+<body class="theme-dark">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="workspace-name" id="workspace-label">Archive</div>
+        <div class="sidebar-actions">
+          <button id="btn-scan" title="Scan Slack workspace">+</button>
+        </div>
+      </div>
+      <div class="sidebar-search">
+        <input id="channel-filter" placeholder="Filter channels..." />
+      </div>
+      <div class="channels" id="channel-list">
+        <div class="sidebar-loading">Loading channels…</div>
+      </div>
+      <div class="sidebar-footer">
+        <button id="btn-export" class="primary">Export kept (.zip)</button>
+        <button id="btn-clear-data" class="danger" title="Wipe all local data in this browser">Clear my data</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="data-banner">
+        Your Slack token and scraped data live only in this browser (IndexedDB). The server is a stateless proxy — nothing is stored there.
+        <strong>Download your ZIP before closing the tab if you want to keep curated results off-machine.</strong>
+      </div>
+
+      <div class="resume-banner" id="resume-banner" hidden>
+        <strong>Interrupted scrapes detected.</strong>
+        <div id="resume-banner-body"></div>
+      </div>
+
+      <div class="scrape-progress" id="scrape-progress" hidden>
+        <div class="scrape-progress-head">
+          <strong>Scraping…</strong>
+          <span class="scrape-progress-label" id="scrape-progress-label"></span>
+          <span class="spacer"></span>
+          <button id="btn-pause-scrape">Pause</button>
+          <button id="btn-cancel-scrape" class="danger">Cancel</button>
+        </div>
+        <div id="scrape-progress-channels"></div>
+      </div>
+
+      <header class="main-header">
+        <div class="channel-title">
+          <span class="hash">#</span>
+          <span id="current-channel-name">select a channel</span>
+          <span class="channel-subtitle" id="current-channel-subtitle"></span>
+        </div>
+        <div class="main-actions">
+          <input type="search" id="message-search" placeholder="Search this channel…" />
+          <select id="page-size">
+            <option value="50">50 per page</option>
+            <option value="100" selected>100 per page</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+          <button id="btn-keep-page" title="Mark all visible as KEEP">Keep page</button>
+          <button id="btn-delete-page" title="Mark all visible as DELETE" class="danger">Delete page</button>
+        </div>
+      </header>
+      <div class="messages" id="messages">
+        <div class="empty-state">Pick a channel on the left to start curating, or click + to scan your workspace.</div>
+      </div>
+      <footer class="pagination" id="pagination"></footer>
+    </main>
+
+    <aside class="thread-panel" id="thread-panel" hidden>
+      <header class="thread-header">
+        <h3>Thread</h3>
+        <button id="btn-close-thread" title="Close thread">×</button>
+      </header>
+      <div class="thread-body" id="thread-body"></div>
+    </aside>
+  </div>
+
+  <div class="modal-backdrop" id="modal-scan" hidden>
+    <div class="modal">
+      <header>
+        <h2>Scan Slack workspace</h2>
+        <button class="close" data-close="modal-scan">×</button>
+      </header>
+      <div class="modal-body">
+        <label>Slack user token (xoxp-…)</label>
+        <input type="password" id="scan-token" placeholder="xoxp-..." autocomplete="off" />
+        <div class="row">
+          <button id="btn-do-scan" class="primary">Scan</button>
+          <span class="hint">Token is sent through our proxy to slack.com only; never logged or stored.</span>
+        </div>
+        <div id="scan-status" class="status"></div>
+
+        <div class="scrape-config" hidden id="scrape-config">
+          <h3>Pick channels to scrape</h3>
+          <p class="hint">
+            The scrape runs inside this browser tab. Keep the tab open — the laptop's screen will be kept awake automatically.
+            Progress is checkpointed to IndexedDB every page; you can safely refresh and resume if interrupted.
+          </p>
+          <div class="scan-filter">
+            <input id="scan-filter" placeholder="Filter channels..." />
+            <label><input type="checkbox" id="scan-member-only" checked /> Only channels I'm in</label>
+            <label><input type="checkbox" id="scan-hide-scraped" /> Hide already scraped</label>
+          </div>
+          <div class="scan-results" id="scan-results"></div>
+          <div class="scrape-options">
+            <label><input type="checkbox" id="opt-scrape-messages" checked /> Fetch messages</label>
+            <label><input type="checkbox" id="opt-resolve-threads" checked /> Fetch thread replies</label>
+            <label>Min replies per thread:
+              <select id="opt-min-replies">
+                <option value="1" selected>1+</option>
+                <option value="2">2+</option>
+                <option value="3">3+</option>
+                <option value="5">5+</option>
+              </select>
+            </label>
+            <label>Cutoff months (-1 = all history):
+              <input type="number" id="opt-cutoff" value="-1" min="-1" max="120" />
+            </label>
+          </div>
+          <div class="row">
+            <button id="btn-do-scrape" class="primary">Start scrape</button>
+            <span class="hint" id="selected-count">0 selected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-export" hidden>
+    <div class="modal">
+      <header>
+        <h2>Export kept messages</h2>
+        <button class="close" data-close="modal-export">×</button>
+      </header>
+      <div class="modal-body">
+        <p>
+          Downloads a ZIP to your computer with one <code>curated/&lt;channel&gt;.json</code> per channel, containing only messages you marked as <b>keep</b> (plus their thread replies if fetched).
+          Nothing is sent to the server. Your raw scraped data stays in this browser until you clear it.
+        </p>
+        <label><input type="checkbox" id="opt-include-unmarked" /> Also include unmarked messages (not just explicit 'keep')</label>
+        <div class="row">
+          <button id="btn-do-export" class="primary">Download ZIP</button>
+        </div>
+        <div class="export-summary" id="export-summary"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

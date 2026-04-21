@@ -1,0 +1,40 @@
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.python-version
+
+# --- Node / Vercel local dev ---
+node_modules/
+.vercel/
+.env
+.env.*
+!.env.example
+
+# --- Runtime + logs + pids (never commit these) ---
+*.log
+*.pid
+logs/
+*.lock
+.*.log
+.~lock*
+.thread_resolver.*
+.webapp.*
+
+# --- Scraped / internal content (do NOT publish) ---
+knowledge-archive/
+channels.json
+Seller-Policy-Rollout-Playbook.pptx
+confluence-example-fraud-prevention.md
+quick-win-seller-policy-rollout-playbook.md
+incidents_scrape.log
