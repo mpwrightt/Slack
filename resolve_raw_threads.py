@@ -21,13 +21,26 @@ Usage:
 import argparse
 import json
 import os
+import socket
 import sys
 import time
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+
+# Errors that signal "network is temporarily unavailable" (e.g. laptop woke
+# from sleep and DNS hasn't come back, transient DNS failure, TLS reset).
+# These should retry forever with backoff rather than crash the script.
+NETWORK_ERRORS = (
+    urllib.error.URLError,
+    socket.gaierror,
+    socket.timeout,
+    ConnectionError,
+    TimeoutError,
+)
 
 SCRIPT_DIR = Path(__file__).parent
 RAW_DIR = SCRIPT_DIR / "knowledge-archive" / "raw"
@@ -61,9 +74,12 @@ rate_limiter = AdaptiveRateLimiter()
 
 
 def fetch_thread_replies(client, channel_id, thread_ts):
-    """Fetch all replies in a thread."""
+    """Fetch all replies in a thread. Retries forever on transient network
+    errors (DNS failure after sleep, socket reset, etc.) so an overnight run
+    survives a laptop sleep/wake cycle."""
     replies = []
     cursor = None
+    network_retries = 0
 
     while True:
         try:
@@ -81,6 +97,7 @@ def fetch_thread_replies(client, channel_id, thread_ts):
                 batch = batch[1:]
             replies.extend(batch)
             rate_limiter.on_success()
+            network_retries = 0  # reset on any success
 
             if not response.get("has_more", False):
                 break
@@ -100,6 +117,19 @@ def fetch_thread_replies(client, channel_id, thread_ts):
             else:
                 print(f"    Thread error {thread_ts}: {e.response['error']}", flush=True)
                 break
+
+        except NETWORK_ERRORS as e:
+            # Exponential backoff capped at 5 minutes. No hard attempt cap:
+            # we'd rather wait an hour for the network than drop progress.
+            network_retries += 1
+            wait = min(300, 5 * (2 ** min(network_retries, 6)))
+            print(
+                f"    Network error (retry {network_retries}): {type(e).__name__}: {e}. "
+                f"Sleeping {wait}s before retry.",
+                flush=True,
+            )
+            time.sleep(wait)
+            continue
 
     return replies
 
